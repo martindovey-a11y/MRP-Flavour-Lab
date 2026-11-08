@@ -240,6 +240,13 @@ let DB=loadData();
     if(!used){DB.rm=DB.rm.filter(r=>r!==stray);ch=true;}}
   if(!z){z={id:Math.max(0,...DB.rm.map(r=>r.id))+1,name:"Zorbit 2144 DG",type:"Carrier/diluent",costPerKg:0,supplier:"",notes:"Set cost per kg"};DB.rm.push(z);ch=true;}
   NUT_DATA[z.name]=ZD;
+  (DB.finalFormulas||[]).forEach(f=>{
+    if((f.components||[]).some(c=>c.pct===undefined&&c.qty!=null)){
+      const src=f.rdSourceId&&(DB.rdFormulas||[]).find(r=>r.id===f.rdSourceId);
+      const ver=src&&(src.versions||[]).find(v=>v.id===f.rdVersionId);
+      f.components=qtyToPct(ver&&ver.components&&ver.components.length?ver.components:f.components);ch=true;
+    }
+  });
   if(ch)save();
 })();
 let S={view:"rd",selectedRD:null,selectedFinal:null,editObj:null,search:"",rmSearch:"",rmTypeFilter:"All",aiLoading:false,nutServing:100,showCosts:true,showCommercial:true};
@@ -296,17 +303,18 @@ function fmtCostQty(comps){const tot=totalQty(comps);if(tot===0)return 0;let c=0
 // pct-based helpers — Final formulas
 function fmtCost(comps){let c=0;(comps||[]).forEach(x=>{const r=DB.rm.find(m=>m.id===x.rmId);if(r)c+=(parseFloat(x.pct)||0)/100*r.costPerKg;});return c;}
 function fmtPct(comps){return(comps||[]).reduce((s,x)=>s+(parseFloat(x.pct)||0),0);}
+function nutOf(rm){return rm?(NUT_DATA[rm.name]||rm.nut||null):null;}
 function calcNut(comps,sg){
   const tot=totalQty(comps);
   const usesQty=tot>0&&comps.some(c=>c.qty!=null);
   const o={};NUT_FIELDS.forEach(f=>o[f]=0);
   (comps||[]).forEach(c=>{
     const rm=DB.rm.find(r=>r.id===c.rmId);if(!rm)return;
-    const nd=NUT_DATA[rm.name];if(!nd)return;
+    const nd=nutOf(rm);if(!nd)return;
     const w=usesQty?compPct(c,tot)/100:(parseFloat(c.pct)||0)/100;
     NUT_FIELDS.forEach(f=>o[f]+=(nd[f]||0)*w*(sg/100));
   });return o;}
-function hasNut(comps){return(comps||[]).some(c=>{const rm=DB.rm.find(r=>r.id===c.rmId);return rm&&NUT_DATA[rm.name];});}
+function hasNut(comps){return(comps||[]).some(c=>{const rm=DB.rm.find(r=>r.id===c.rmId);return rm&&nutOf(rm);});}
 function fmtN(v,d){const r=parseFloat((v||0).toFixed(d||1));return r===0?"0":r.toString();}
 function nutPanel(comps,sg,showServing){
   if(!hasNut(comps))return'<div class="nut-panel"><p style="font-size:11px;color:var(--mrp-mid)"><i class="ti ti-info-circle"></i> No nutritional data available for these raw materials.</p></div>';
@@ -407,7 +415,7 @@ function renderVersionsTable(f,vers){
   }).join("");
 
   // Promote buttons footer
-  const promoteRow=vers.map(v=>'<td colspan="'+vCols+'" style="text-align:center;border-left:1px solid var(--mrp-border);padding:6px"><button class="btn-promote" onclick="promoteToFinal('+f.id+','+v.id+')"><i class="ti ti-arrow-up-circle"></i> Promote to final</button> <button class="btn-promote" onclick="openSpec('+f.id+','+v.id+')"><i class="ti ti-file-description"></i> Spec sheet</button></td>').join("");
+  const promoteRow=vers.map(v=>'<td colspan="'+vCols+'" style="text-align:center;border-left:1px solid var(--mrp-border);padding:6px"><button class="btn-promote" onclick="promoteToFinal('+f.id+','+v.id+')"><i class="ti ti-arrow-up-circle"></i> Promote to final</button> <button class="btn-promote" onclick="openSpec('+f.id+','+v.id+')"><i class="ti ti-file-description"></i> Spec sheet</button> <button class="btn-promote" onclick="makeRM('+f.id+','+v.id+')"><i class="ti ti-flask"></i> Make RM</button></td>').join("");
 
   const tbl='<div style="overflow-x:auto"><table class="tbl" style="font-size:11px"><thead>'
     +'<tr><th rowspan="2">Raw material</th>'+(S.showCosts?'<th rowspan="2" style="text-align:center;white-space:nowrap">R/kg</th>':'')+verHdrCells+'</tr>'
@@ -507,10 +515,14 @@ function updateVerCommercial(fId,vId,field,val){
 function renderVerCard(){}
 
 function setActiveVer(fId,vId){const f=DB.rdFormulas.find(x=>x.id===fId);if(!f)return;f.versions.forEach(v=>v.active=(v.id===vId));save();render();}
+function qtyToPct(comps){
+  const tot=totalQty(comps);
+  return (comps||[]).map(c=>({rmId:c.rmId,pct:tot>0?Math.round((parseFloat(c.qty)||0)/tot*1000000)/10000:(parseFloat(c.pct)||0)}));
+}
 function promoteToFinal(fId,vId){
   const f=DB.rdFormulas.find(x=>x.id===fId);if(!f)return;
   const v=f.versions.find(x=>x.id===vId);if(!v)return;
-  DB.finalFormulas.push({id:Date.now(),code:"F-"+Date.now().toString().slice(-4),name:f.name,status:"Active",version:"1.0",targetBatchKg:v.batchKg||1,components:[...v.components],notes:"Promoted from "+f.code+" "+v.label,rdSourceId:f.id,rdVersionId:v.id});
+  DB.finalFormulas.push({id:Date.now(),code:"F-"+Date.now().toString().slice(-4),name:f.name,status:"Active",version:"1.0",targetBatchKg:v.batchKg||1,components:qtyToPct(v.components),notes:"Promoted from "+f.code+" "+v.label,rdSourceId:f.id,rdVersionId:v.id});
   save();S.view="final";S.selectedRD=null;render();showToast("Promoted to Final formulas");
 }
 function newRD(){S.editObj={code:"",name:"",status:"Development",notes:"",versions:[]};S.view="editRD";render();}
@@ -601,7 +613,7 @@ function renderFinalDetail(){
   const sorted=[...f.components].sort((a,b)=>(parseFloat(b.pct)||0)-(parseFloat(a.pct)||0));
   const apps=DB.apps.filter(a=>a.formulaId===f.id&&a.formulaType==="final");
   const src=f.rdSourceId?DB.rdFormulas.find(r=>r.id===f.rdSourceId):null;
-  return'<div style="max-width:720px"><div style="display:flex;gap:8px;margin-bottom:1.1rem;flex-wrap:wrap"><button class="btn-outline" onclick="S.selectedFinal=null;render()"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-outline" onclick="editFinal('+f.id+')"><i class="ti ti-edit"></i> Edit</button><button class="btn-mrp" onclick="openSpec('+f.id+')"><i class="ti ti-file-description"></i> Spec sheet</button><class="btn-danger" onclick="deleteFinal('+f.id+')">Delete</button></div><div style="margin-bottom:1.1rem"><div style="display:flex;align-items:center;gap:8px;margin-bottom:3px"><h1>'+f.name+'</h1><span class="badge b-'+(f.status==="Active"?"active":"dev")+'">'+f.status+'</span></div><div style="font-size:11px;color:var(--mrp-mid)"><span style="font-family:var(--font-mono)">'+f.code+'</span> &middot; v'+f.version+' &middot; '+bkg+' kg'+(src?' &middot; from <span style="font-family:var(--font-mono)">'+src.code+"</span>":"")+'</div></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:1.1rem"><div class="metric"><div class="metric-val">R '+cost.toFixed(2)+'</div><div class="metric-lbl">Cost per kg</div></div><div class="metric"><div class="metric-val">R '+(cost*bkg).toFixed(2)+'</div><div class="metric-lbl">Batch cost ('+bkg+' kg)</div></div><div class="metric"><div class="metric-val">'+ f.components.length+'</div><div class="metric-lbl">Raw materials</div></div><div class="metric"><div class="metric-val" style="color:'+(ok?"var(--mrp-dark)":"var(--color-text-warning)")+'">'+tot.toFixed(3)+'%</div><div class="metric-lbl">Total %</div></div></div><div class="card" style="padding:0;overflow:hidden;margin-bottom:1rem"><div style="padding:8px 14px;border-bottom:0.5px solid var(--mrp-border);background:var(--mrp-pale)"><h3>Composition</h3></div><div style="overflow-x:auto"><table class="tbl" style="table-layout:auto"><thead><tr><th>Raw material</th><th style="width:100px">Type</th><th style="width:120px">%</th><th style="width:75px;text-align:right">kg</th><th style="width:110px;text-align:right">Cost contrib.</th></tr></thead><tbody>'+sorted.map(c=>{const rm=DB.rm.find(r=>r.id===c.rmId);if(!rm)return"";const pct=parseFloat(c.pct)||0;return'<tr><td style="font-weight:500;white-space:normal">'+rm.name+'</td><td><span class="badge b-gray">'+rm.type+'</span></td><td><span class="pct-bar-wrap"><span class="pct-bar" style="width:'+Math.min(pct,100)+'%"></span></span><span style="font-family:var(--font-mono);font-size:11px">'+pct.toFixed(3)+'%</span></td><td style="text-align:right;font-family:var(--font-mono);font-size:11px">'+(pct/100*bkg).toFixed(4)+'</td><td style="text-align:right;font-family:var(--font-mono);font-size:11px">R '+((pct/100)*rm.costPerKg).toFixed(4)+'</td></tr>';}).join("")+'<tr style="font-weight:500;background:var(--mrp-pale)"><td colspan="2">Total</td><td><span style="font-family:var(--font-mono);font-size:11px;color:'+(ok?"var(--mrp-dark)":"var(--color-text-warning)")+'">'+tot.toFixed(3)+'%</span></td><td style="text-align:right;font-family:var(--font-mono);font-size:11px">'+ bkg.toFixed(3)+'</td><td style="text-align:right;font-family:var(--font-mono);font-size:11px">R '+cost.toFixed(4)+'</td></tr></tbody></table></div></div>'+nutPanel(f.components,S.nutServing,true)+(f.notes?'<div class="card-green" style="margin-top:1rem;font-size:12px;color:var(--mrp-dark)"><i class="ti ti-bulb" style="margin-right:5px"></i>'+f.notes+'</div>':"")+ '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;margin-bottom:8px"><h2>Applications ('+apps.length+')</h2><button class="btn-outline btn-sm" onclick="newApp('+f.id+','+"'final'"+ ')"><i class="ti ti-plus"></i> Add</button></div>'+(apps.length===0?'<div class="empty" style="border:0.5px solid var(--mrp-border);border-radius:10px;padding:1.2rem"><i class="ti ti-package-off"></i><p>No applications linked.</p></div>':'<div class="card" style="padding:0;overflow:hidden"><table class="tbl" style="table-layout:auto"><thead><tr><th>Application</th><th>Type</th><th>Client</th><th style="text-align:right">Usage %</th><th>Status</th></tr></thead><tbody>'+apps.map(a=>'<tr><td style="font-weight:500">'+a.name+'</td><td><span class="badge b-info">'+a.type+'</span></td><td style="color:var(--color-text-secondary)">'+(a.client||"\u2014")+'</td><td style="text-align:right;font-family:var(--font-mono)">'+ a.usagePct+'%</td><td><span class="badge b-'+(a.status==="Active"?"active":"dev")+'">'+a.status+'</span></td></tr>').join("")+"</tbody></table></div>")+'</div>';
+  return'<div style="max-width:720px"><div style="display:flex;gap:8px;margin-bottom:1.1rem;flex-wrap:wrap"><button class="btn-outline" onclick="S.selectedFinal=null;render()"><i class="ti ti-arrow-left"></i> Back</button><button class="btn-outline" onclick="editFinal('+f.id+')"><i class="ti ti-edit"></i> Edit</button><button class="btn-mrp" onclick="openSpec('+f.id+')"><i class="ti ti-file-description"></i> Spec sheet</button><button class="btn-outline" onclick="makeRM('+f.id+',null)"><i class="ti ti-flask"></i> Make RM</button><button class="btn-danger" onclick="deleteFinal('+f.id+')">Delete</button></div><div style="margin-bottom:1.1rem"><div style="display:flex;align-items:center;gap:8px;margin-bottom:3px"><h1>'+f.name+'</h1><span class="badge b-'+(f.status==="Active"?"active":"dev")+'">'+f.status+'</span></div><div style="font-size:11px;color:var(--mrp-mid)"><span style="font-family:var(--font-mono)">'+f.code+'</span> &middot; v'+f.version+' &middot; '+bkg+' kg'+(src?' &middot; from <span style="font-family:var(--font-mono)">'+src.code+"</span>":"")+'</div></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:1.1rem"><div class="metric"><div class="metric-val">R '+cost.toFixed(2)+'</div><div class="metric-lbl">Cost per kg</div></div><div class="metric"><div class="metric-val">R '+(cost*bkg).toFixed(2)+'</div><div class="metric-lbl">Batch cost ('+bkg+' kg)</div></div><div class="metric"><div class="metric-val">'+ f.components.length+'</div><div class="metric-lbl">Raw materials</div></div><div class="metric"><div class="metric-val" style="color:'+(ok?"var(--mrp-dark)":"var(--color-text-warning)")+'">'+tot.toFixed(3)+'%</div><div class="metric-lbl">Total %</div></div></div><div class="card" style="padding:0;overflow:hidden;margin-bottom:1rem"><div style="padding:8px 14px;border-bottom:0.5px solid var(--mrp-border);background:var(--mrp-pale)"><h3>Composition</h3></div><div style="overflow-x:auto"><table class="tbl" style="table-layout:auto"><thead><tr><th>Raw material</th><th style="width:100px">Type</th><th style="width:120px">%</th><th style="width:75px;text-align:right">kg</th><th style="width:110px;text-align:right">Cost contrib.</th></tr></thead><tbody>'+sorted.map(c=>{const rm=DB.rm.find(r=>r.id===c.rmId);if(!rm)return"";const pct=parseFloat(c.pct)||0;return'<tr><td style="font-weight:500;white-space:normal">'+rm.name+'</td><td><span class="badge b-gray">'+rm.type+'</span></td><td><span class="pct-bar-wrap"><span class="pct-bar" style="width:'+Math.min(pct,100)+'%"></span></span><span style="font-family:var(--font-mono);font-size:11px">'+pct.toFixed(3)+'%</span></td><td style="text-align:right;font-family:var(--font-mono);font-size:11px">'+(pct/100*bkg).toFixed(4)+'</td><td style="text-align:right;font-family:var(--font-mono);font-size:11px">R '+((pct/100)*rm.costPerKg).toFixed(4)+'</td></tr>';}).join("")+'<tr style="font-weight:500;background:var(--mrp-pale)"><td colspan="2">Total</td><td><span style="font-family:var(--font-mono);font-size:11px;color:'+(ok?"var(--mrp-dark)":"var(--color-text-warning)")+'">'+tot.toFixed(3)+'%</span></td><td style="text-align:right;font-family:var(--font-mono);font-size:11px">'+ bkg.toFixed(3)+'</td><td style="text-align:right;font-family:var(--font-mono);font-size:11px">R '+cost.toFixed(4)+'</td></tr></tbody></table></div></div>'+nutPanel(f.components,S.nutServing,true)+(f.notes?'<div class="card-green" style="margin-top:1rem;font-size:12px;color:var(--mrp-dark)"><i class="ti ti-bulb" style="margin-right:5px"></i>'+f.notes+'</div>':"")+ '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:1rem;margin-bottom:8px"><h2>Applications ('+apps.length+')</h2><button class="btn-outline btn-sm" onclick="newApp('+f.id+','+"'final'"+ ')"><i class="ti ti-plus"></i> Add</button></div>'+(apps.length===0?'<div class="empty" style="border:0.5px solid var(--mrp-border);border-radius:10px;padding:1.2rem"><i class="ti ti-package-off"></i><p>No applications linked.</p></div>':'<div class="card" style="padding:0;overflow:hidden"><table class="tbl" style="table-layout:auto"><thead><tr><th>Application</th><th>Type</th><th>Client</th><th style="text-align:right">Usage %</th><th>Status</th></tr></thead><tbody>'+apps.map(a=>'<tr><td style="font-weight:500">'+a.name+'</td><td><span class="badge b-info">'+a.type+'</span></td><td style="color:var(--color-text-secondary)">'+(a.client||"\u2014")+'</td><td style="text-align:right;font-family:var(--font-mono)">'+ a.usagePct+'%</td><td><span class="badge b-'+(a.status==="Active"?"active":"dev")+'">'+a.status+'</span></td></tr>').join("")+"</tbody></table></div>")+'</div>';
 }
 
 function newFinal(){S.editObj={code:"",name:"",status:"Active",version:"1.0",targetBatchKg:1,components:[{rmId:"",pct:0}],notes:""};S.view="editFinal";render();setTimeout(liveCalcFinal,50);}
@@ -655,8 +667,39 @@ function renderRM(){
 }
 function renderRMForm(){
   const r=S.editObj||{name:"",type:"Other",supplier:"",costPerKg:"",notes:""};
-  const nd=NUT_DATA[r.name];
+  const nd=nutOf(r);
   return'<div style="max-width:460px"><div class="ph"><h1>'+(r.id?"Edit RM":"New raw material")+'</h1><div style="display:flex;gap:8px"><button class="btn-outline" onclick="S.view='+"'rm'"+';S.editObj=null;render()">Cancel</button><button class="btn-mrp" onclick="saveRM()"><i class="ti ti-check"></i> Save</button></div></div><div class="card" style="margin-bottom:1rem"><div class="fg" style="margin-bottom:10px"><label>Name</label><input id="rm-name" value="'+r.name+'"></div><div class="fr" style="margin-bottom:10px"><div class="fg"><label>Type</label><select id="rm-type">'+ TYPES.map(t=>'<option '+(r.type===t?"selected":"")+'>'+t+'</option>').join("")+'</select></div><div class="fg"><label>Supplier</label><input id="rm-supplier" value="'+(r.supplier||"")+'"></div></div><div class="fg" style="margin-bottom:10px"><label>Cost per kg (ZAR)</label><input type="number" id="rm-cost" value="'+r.costPerKg+'" min="0" step="0.01"></div><div class="fg"><label>Notes</label><textarea id="rm-notes" style="min-height:50px">'+(r.notes||"")+'</textarea></div></div>'+(nd?'<div class="card-green"><p style="font-size:11px;font-weight:500;color:var(--mrp-dark);margin-bottom:8px"><i class="ti ti-check"></i> Nutritional data loaded (per 100 g)</p><table class="tbl" style="font-size:11px"><thead><tr><th>Nutrient</th><th style="text-align:right">Value</th></tr></thead><tbody>'+NUT_FIELDS.map((f,i)=>nd[f]?'<tr><td>'+NUT_LABELS[i]+'</td><td style="text-align:right;font-family:var(--font-mono)">'+nd[f]+' '+NUT_SHORT[i]+'</td></tr>':'').join("")+"</tbody></table></div>":'<div class="card-green" style="font-size:11px;color:var(--mrp-mid)"><i class="ti ti-info-circle"></i> No nutritional data for this material \u2014 contributes 0 to formula calculations.</div>')+'</div>';
+}
+function makeRM(fId,vId){
+  const isRD=vId!=null;
+  const f=isRD?DB.rdFormulas.find(x=>x.id===fId):DB.finalFormulas.find(x=>x.id===fId);
+  if(!f)return;
+  const v=isRD?(f.versions||[]).find(x=>x.id===vId):f;
+  if(!v)return;
+  const comps=v.components||[];
+  let cost,yf=1;
+  if(isRD){
+    const yld=parseFloat(v.yieldLoss)||0;yf=yld<100?1/(1-yld/100):1;
+    cost=fmtCostQty(comps)*yf+(parseFloat(v.directCost)||0)+(parseFloat(v.packaging)||0);
+  }else cost=fmtCost(comps);
+  const name=prompt("Name for the new raw material:",f.name);
+  if(!name||!name.trim())return;
+  const nm=name.trim();
+  const nut=hasNut(comps)?calcNut(comps,100):null;
+  if(nut&&yf!==1)Object.keys(nut).forEach(k=>nut[k]=nut[k]*yf);
+  const costR=Math.round(cost*100)/100;
+  let rm=DB.rm.find(r=>r.name.toLowerCase()===nm.toLowerCase());
+  if(rm){
+    if(!confirm('A raw material named "'+rm.name+'" already exists. Update its cost and nutritional values?'))return;
+  }else{
+    rm={id:Math.max(0,...DB.rm.map(r=>r.id))+1,name:nm,type:"Flavour base",supplier:"MRP (in-house)",notes:""};
+    DB.rm.push(rm);
+  }
+  rm.costPerKg=costR;
+  rm.notes="Made from recipe: "+f.name+(isRD?" "+(v.label||""):"");
+  if(nut)rm.nut=nut;else delete rm.nut;
+  save();
+  showToast('"'+rm.name+'" saved as a raw material (R'+costR.toFixed(2)+'/kg'+(nut?'':', no nutritional data')+')');
 }
 function newRM(){S.editObj={name:"",type:"Other",supplier:"",costPerKg:"",notes:""};S.view="editRM";render();}
 function editRM(id){S.editObj=JSON.parse(JSON.stringify(DB.rm.find(r=>r.id===id)));S.view="editRM";render();}
