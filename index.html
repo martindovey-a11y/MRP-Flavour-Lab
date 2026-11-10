@@ -544,13 +544,20 @@ function promoteToFinal(fId,vId){
   DB.finalFormulas.push({id:Date.now(),code:"F-"+Date.now().toString().slice(-4),name:f.name,status:"Active",version:"1.0",targetBatchKg:v.batchKg||1,components:qtyToPct(v.components),notes:"Promoted from "+f.code+" "+v.label,rdSourceId:f.id,rdVersionId:v.id});
   save();S.view="final";S.selectedRD=null;render();showToast("Promoted to Final formulas");
 }
-function newRD(){S.editObj={code:"",name:"",status:"Development",notes:"",versions:[]};S.view="editRD";render();}
+function genRDCode(){
+  const used=new Set(DB.rdFormulas.map(f=>String(f.code||"").toUpperCase()));
+  const cur=document.getElementById("f-code");if(cur)used.delete(String(cur.value||"").toUpperCase());
+  let c,n=0;do{c="RD"+(1000+Math.floor(Math.random()*9000));n++;}while(used.has(c)&&n<200);
+  return c;
+}
+function fillRDCode(){const el=document.getElementById("f-code");if(el)el.value=genRDCode();}
+function newRD(){S.editObj={code:genRDCode(),name:"",status:"Development",notes:"",versions:[]};S.view="editRD";render();}
 function editRD(id){S.editObj=JSON.parse(JSON.stringify(DB.rdFormulas.find(f=>f.id===id)));S.view="editRD";render();}
 function deleteRD(id){if(!confirm("Delete this recipe and all its versions?"))return;DB.rdFormulas=DB.rdFormulas.filter(f=>f.id!==id);save();S.selectedRD=null;S.view="rd";render();}
 
 function renderRDForm(){
   const f=S.editObj;
-  return'<div style="max-width:500px"><div class="ph"><h1>'+(f.id?"Edit recipe":"New recipe")+'</h1><div style="display:flex;gap:8px"><button class="btn-outline" onclick="cancelEdit('+"'rd'"+ ')">Cancel</button><button class="btn-mrp" onclick="saveRD()"><i class="ti ti-check"></i> Save</button></div></div><div class="card"><div class="fr" style="margin-bottom:10px"><div class="fg" style="flex:0 0 130px"><label>Code</label><input id="f-code" value="'+f.code+'" placeholder="e.g. RD-2025-001"></div><div class="fg" style="flex:1"><label>Project name</label><input id="f-name" value="'+f.name+'"></div></div><div class="fg" style="margin-bottom:10px"><label>Status</label><select id="f-status" style="max-width:180px">'+ ["Development","Active","On hold","Discontinued"].map(s=>'<option '+(f.status===s?"selected":"")+'>'+s+'</option>').join("")+'</select></div><div class="fg"><label>Notes / brief</label><textarea id="f-notes" style="min-height:60px">'+(f.notes||"")+'</textarea></div></div></div>';
+  return'<div style="max-width:500px"><div class="ph"><h1>'+(f.id?"Edit recipe":"New recipe")+'</h1><div style="display:flex;gap:8px"><button class="btn-outline" onclick="cancelEdit('+"'rd'"+ ')">Cancel</button><button class="btn-mrp" onclick="saveRD()"><i class="ti ti-check"></i> Save</button></div></div><div class="card"><div class="fr" style="margin-bottom:10px"><div class="fg" style="flex:0 0 190px"><label>Code</label><div style="display:flex;gap:6px"><input id="f-code" value="'+f.code+'" placeholder="RD1234" style="min-width:0"><button type="button" class="btn-outline btn-sm" onclick="fillRDCode()" title="Generate a random code" style="white-space:nowrap">Generate</button></div></div><div class="fg" style="flex:1"><label>Project name</label><input id="f-name" value="'+f.name+'"></div></div><div class="fg" style="margin-bottom:10px"><label>Status</label><select id="f-status" style="max-width:180px">'+ ["Development","Active","On hold","Discontinued"].map(s=>'<option '+(f.status===s?"selected":"")+'>'+s+'</option>').join("")+'</select></div><div class="fg"><label>Notes / brief</label><textarea id="f-notes" style="min-height:60px">'+(f.notes||"")+'</textarea></div></div></div>';
 }
 function saveRD(){
   const g=id=>document.getElementById(id);const f=S.editObj;
@@ -748,7 +755,7 @@ function saveNote(){
 }
 function deleteNote(id){if(!confirm("Delete this note?"))return;DB.notes=DB.notes.filter(n=>n.id!==id);save();render();}
 function openIdea(id){S.fromIdeas=true;S.view="rd";S.selectedRD=id;render();}
-function newIdeaRecipe(){S.fromIdeas=true;S.selectedRD=null;S.editObj={code:"ID-"+Date.now().toString().slice(-4),name:"",status:"Development",notes:"",versions:[],idea:true};S.view="editRD";render();}
+function newIdeaRecipe(){S.fromIdeas=true;S.selectedRD=null;S.editObj={code:genRDCode(),name:"",status:"Development",notes:"",versions:[],idea:true};S.view="editRD";render();}
 function moveIdeaToRD(id){
   const f=DB.rdFormulas.find(x=>x.id===id);if(!f)return;
   if(!confirm('Move "'+f.name+'" to Recipes?'))return;
