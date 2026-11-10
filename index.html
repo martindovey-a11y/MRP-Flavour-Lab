@@ -232,6 +232,13 @@ function save(){try{localStorage.setItem(SK,JSON.stringify(DB));}catch(e){}}
 let DB=loadData();
 (function(){
   if(!DB.notes)DB.notes=[];
+  if(!DB.migrations)DB.migrations={};
+  if(!DB.migrations.dupProducts1){
+    ["Beef Paste B276","Beef Paste B37","Beef Paste B277","Chicken Paste C148","Fried Onion Paste 150"].forEach(n=>{
+      const r=DB.rm.find(x=>x.name.toLowerCase()===n.toLowerCase());if(r)cloneRM(r);
+    });
+    DB.migrations.dupProducts1=true;save();
+  }
   const ZD={energy:1619,protein:0.2,carbGly:96.6,sugar:21.0,fatTotal:0,fatSat:0,fatMono:0,fatPoly:0,fibre:0,sodium:56};
   const isZ=r=>/zorbit/i.test(r.name)&&/2144/.test(r.name);
   let z=DB.rm.find(isZ);
@@ -689,7 +696,7 @@ function saveApp(){
 function renderRM(){
   const types=["All",...new Set(DB.rm.map(r=>r.type))].sort();
   const filt=DB.rm.filter(r=>{const ms=!S.rmSearch||r.name.toLowerCase().includes(S.rmSearch.toLowerCase());return ms&&(S.rmTypeFilter==="All"||r.type===S.rmTypeFilter);});
-  return'<div class="ph"><h1>Raw materials</h1><button class="btn-mrp" onclick="newRM()"><i class="ti ti-plus"></i> Add RM</button></div><div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap"><input type="text" placeholder="Search\u2026" value="'+S.rmSearch+'" oninput="S.rmSearch=this.value;render()" style="max-width:180px"><select onchange="S.rmTypeFilter=this.value;render()" style="max-width:180px">'+ types.map(t=>'<option '+(S.rmTypeFilter===t?"selected":"")+'>'+t+'</option>').join("")+'</select></div><div class="card" style="padding:0;overflow:hidden"><table class="tbl" style="table-layout:auto"><thead><tr><th>Name</th><th style="width:130px">Type</th><th style="width:80px;text-align:right">R/kg</th><th style="width:80px;text-align:center">Nutritionals</th><th></th></tr></thead><tbody>'+(filt.length===0?'<tr><td colspan="5"><div class="empty">No results.</div></td></tr>':'')+ filt.map(r=>{const hasN=!!nutOf(r);const dl=rmDocLinks(r);return'<tr><td style="font-weight:500;white-space:normal">'+r.name+(dl?'<div style="font-size:11px;font-weight:400;margin-top:2px"><i class="ti ti-paperclip"></i> '+dl+'</div>':'')+'</td><td><span class="badge b-gray">'+r.type+'</span></td><td style="text-align:right;font-weight:500;font-family:var(--font-mono)">R '+parseFloat(r.costPerKg).toFixed(2)+'</td><td style="text-align:center"><span class="badge '+(hasN?"b-active":"b-gray")+'">'+(hasN?"\u2713":"\u2014")+'</span></td><td style="text-align:right;white-space:nowrap"><button class="btn-outline btn-sm" onclick="editRM('+r.id+')">Edit</button><button class="btn-danger" onclick="deleteRM('+r.id+')" style="margin-left:4px">Del</button></td></tr>';}).join("")+'</tbody></table></div><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:6px">'+ filt.length+" of "+DB.rm.length+" \u00b7 "+DB.rm.filter(r=>nutOf(r)).length+" with nutritional data</p>";
+  return'<div class="ph"><h1>Raw materials</h1><button class="btn-mrp" onclick="newRM()"><i class="ti ti-plus"></i> Add RM</button></div><div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap"><input type="text" placeholder="Search\u2026" value="'+S.rmSearch+'" oninput="S.rmSearch=this.value;render()" style="max-width:180px"><select onchange="S.rmTypeFilter=this.value;render()" style="max-width:180px">'+ types.map(t=>'<option '+(S.rmTypeFilter===t?"selected":"")+'>'+t+'</option>').join("")+'</select></div><div class="card" style="padding:0;overflow:hidden"><table class="tbl" style="table-layout:auto"><thead><tr><th>Name</th><th style="width:130px">Type</th><th style="width:80px;text-align:right">R/kg</th><th style="width:80px;text-align:center">Nutritionals</th><th></th></tr></thead><tbody>'+(filt.length===0?'<tr><td colspan="5"><div class="empty">No results.</div></td></tr>':'')+ filt.map(r=>{const hasN=!!nutOf(r);const dl=rmDocLinks(r);return'<tr><td style="font-weight:500;white-space:normal">'+r.name+(dl?'<div style="font-size:11px;font-weight:400;margin-top:2px"><i class="ti ti-paperclip"></i> '+dl+'</div>':'')+'</td><td><span class="badge b-gray">'+r.type+'</span></td><td style="text-align:right;font-weight:500;font-family:var(--font-mono)">R '+parseFloat(r.costPerKg).toFixed(2)+'</td><td style="text-align:center"><span class="badge '+(hasN?"b-active":"b-gray")+'">'+(hasN?"\u2713":"\u2014")+'</span></td><td style="text-align:right;white-space:nowrap"><button class="btn-outline btn-sm" onclick="duplicateRM('+r.id+')">Copy</button> <button class="btn-outline btn-sm" onclick="editRM('+r.id+')">Edit</button><button class="btn-danger" onclick="deleteRM('+r.id+')" style="margin-left:4px">Del</button></td></tr>';}).join("")+'</tbody></table></div><p style="font-size:11px;color:var(--color-text-tertiary);margin-top:6px">'+ filt.length+" of "+DB.rm.length+" \u00b7 "+DB.rm.filter(r=>nutOf(r)).length+" with nutritional data</p>";
 }
 function renderRMForm(){
   const r=S.editObj||{name:"",type:"Other",supplier:"",costPerKg:"",notes:""};
@@ -761,6 +768,15 @@ function moveIdeaToRD(id){
   if(!confirm('Move "'+f.name+'" to Recipes?'))return;
   delete f.idea;save();showToast("Moved to Recipes");render();
 }
+function cloneRM(r){
+  const base=r.name+" (copy)";let nm=base,k=2;
+  while(DB.rm.some(x=>x.name.toLowerCase()===nm.toLowerCase()))nm=base+" "+(k++);
+  const c={id:Date.now()+Math.floor(Math.random()*1000),name:nm,type:r.type,supplier:r.supplier||"",costPerKg:r.costPerKg,notes:r.notes||""};
+  if(r.docs&&r.docs.length)c.docs=JSON.parse(JSON.stringify(r.docs));
+  const nd=nutOf(r);if(nd)c.nut=JSON.parse(JSON.stringify(nd));
+  DB.rm.push(c);return c;
+}
+function duplicateRM(id){const r=DB.rm.find(x=>x.id===id);if(!r)return;const c=cloneRM(r);save();render();showToast('Created "'+c.name+'"');}
 function newRM(){S.editObj={name:"",type:"Other",supplier:"",costPerKg:"",notes:""};S.view="editRM";render();}
 function editRM(id){S.editObj=JSON.parse(JSON.stringify(DB.rm.find(r=>r.id===id)));S.view="editRM";render();}
 function deleteRM(id){const used=[...DB.rdFormulas.flatMap(f=>f.versions||[]),...DB.finalFormulas].some(f=>(f.components||[]).some(c=>c.rmId===id));if(used&&!confirm("This RM is used in formulas. Delete anyway?"))return;DB.rm=DB.rm.filter(r=>r.id!==id);save();render();}
